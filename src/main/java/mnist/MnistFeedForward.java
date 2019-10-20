@@ -34,6 +34,7 @@ import org.nd4j.linalg.learning.config.Nesterovs;
 import org.nd4j.linalg.lossfunctions.LossFunctions.LossFunction;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import common.NeuralNetRunner;
 
 import java.io.File;
 
@@ -51,8 +52,8 @@ public class MnistFeedForward  {
         model.init();
 
         createUiServer(model);
-        //print the score with every 10 iteration
-        //model.setListeners(new ScoreIterationListener(10));
+        //print the score with every 1 iteration
+        //model.setListeners(new ScoreIterationListener(1));
 
         DataSetIterator mnistTrain = new MnistDataSetIterator(128, true, 12345);
         trainNet(model, mnistTrain);
@@ -82,7 +83,27 @@ public class MnistFeedForward  {
 
 
         log.info("Build model....");
-        MultiLayerConfiguration conf = null;
+        MultiLayerConfiguration conf = new NeuralNetConfiguration.Builder()
+                .seed(12345) //include a random seed for reproducibility
+                // use stochastic gradient descent as an optimization algorithm
+                .updater(new  Nesterovs(0.006, 0.9))
+                .l2(1e-4)
+                .list()
+                .layer(new DenseLayer.Builder() //create the first, input layer with xavier initialization
+                        .nIn(numRows * numColumns)
+                        .nOut(1000)
+                        .activation(Activation.RELU)
+                        .weightInit(WeightInit.XAVIER)
+                        .build())
+                .layer(new OutputLayer.Builder(LossFunction.NEGATIVELOGLIKELIHOOD) //create hidden layer
+                        .nIn(1000)
+                        .nOut(outputNum)
+                        .activation(Activation.SOFTMAX)
+                        .weightInit(WeightInit.XAVIER)
+                        //.lossfunctions
+                        .build())
+                .build();
+
         return new MultiLayerNetwork(conf);
     }
 

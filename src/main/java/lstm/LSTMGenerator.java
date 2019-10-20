@@ -1,13 +1,21 @@
 package lstm;
 
+import org.deeplearning4j.nn.conf.BackpropType;
 import org.deeplearning4j.nn.conf.MultiLayerConfiguration;
+import org.deeplearning4j.nn.conf.NeuralNetConfiguration;
+import org.deeplearning4j.nn.conf.layers.LSTM;
+import org.deeplearning4j.nn.conf.layers.RnnOutputLayer;
 import org.deeplearning4j.nn.multilayer.MultiLayerNetwork;
+import org.deeplearning4j.nn.weights.WeightInit;
 import org.deeplearning4j.optimize.listeners.ComposableIterationListener;
 import org.deeplearning4j.optimize.listeners.ScoreIterationListener;
 import org.deeplearning4j.util.ModelSerializer;
+import org.nd4j.linalg.activations.Activation;
 import org.nd4j.linalg.api.ndarray.INDArray;
 import org.nd4j.linalg.dataset.api.iterator.DataSetIterator;
 import org.nd4j.linalg.factory.Nd4j;
+import org.nd4j.linalg.learning.config.Adam;
+import org.nd4j.linalg.lossfunctions.LossFunctions;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -20,6 +28,7 @@ public class LSTMGenerator {
 
     private static final int SEQ_LEN = 32;
     private static final String LSTM_MODEL = "C:\\temp\\lstm.model";
+    private static final String SHAKESPEAREMODEL = "C:\\temp\\shakespearemodel\\";
     private static final int BATCH_SIZE = 100;
     private static Logger log = LoggerFactory.getLogger(LSTMGenerator.class);
     private CharIterator charIterator;
@@ -29,16 +38,16 @@ public class LSTMGenerator {
     }
 
     public static void main(String[] args) throws Exception {
-        new LSTMGenerator().run(true, false, 3000);
+        new LSTMGenerator().run(true, false, 3000, "Es war einmal");
     }
 
-    private void run(boolean train, boolean restore, int samplesize) throws Exception {
+    private void run(boolean train, boolean restore, int samplesize, String initializer) throws Exception {
         MultiLayerNetwork model = restore ? restoreModel() : createModel();
         if (train) {
             trainNet(model, charIterator);
             model.save(new File(LSTM_MODEL));
         }
-        System.out.println(generateText(model, samplesize));
+        System.out.println(generateText(model, samplesize, initializer));
     }
 
     private MultiLayerNetwork restoreModel() throws Exception {
@@ -48,10 +57,11 @@ public class LSTMGenerator {
         return ModelSerializer.restoreMultiLayerNetwork(new File(LSTM_MODEL));
     }
 
-    private String generateText(MultiLayerNetwork model, int sampleSize) {
+    private String generateText(MultiLayerNetwork model, int sampleSize, String initializer) {
 
         Map<Integer, Integer> charToIdx = charIterator.getCharToIdx();
         Map<Integer, Integer> idxToChar = charToIdx.entrySet().stream().collect(Collectors.toMap(Map.Entry::getValue, Map.Entry::getKey));
+        warmUpNet(model, initializer, charToIdx);
 
         StringBuilder sampleText = sampleText(model, sampleSize, idxToChar, charToIdx);
         System.out.println(sampleText.toString());
@@ -60,11 +70,28 @@ public class LSTMGenerator {
     }
 
     private StringBuilder sampleText(MultiLayerNetwork model, int sampleSize, Map<Integer, Integer> idxToChar,
-            Map<Integer, Integer> charToIdx) {
+                                     Map<Integer, Integer> charToIdx) {
         Random r = new Random(34352442);
         StringBuilder sampleText = new StringBuilder();
-        //TODO IMPLEMENT
+        INDArray input = getInput(' ', idxToChar);
+        INDArray output;
+        //model.rnnClearPreviousState();
+        for (int s = 0; s < sampleSize; s++) {
+            output = model.rnnTimeStep(input);
+            int nextChar = sampleCharBasedOnOutputProb(output, r, idxToChar);
+            input = getInput((char) nextChar, charToIdx);
+            sampleText.append((char) nextChar);
+        }
         return sampleText;
+    }
+
+
+    private void warmUpNet(MultiLayerNetwork model, String initializer, Map<Integer, Integer> charToIdx) {
+        INDArray output = null;
+        for (char c : initializer.toCharArray()) {
+            INDArray input = getInput(c, charToIdx);
+            model.rnnTimeStep(input);
+        }
     }
 
 
@@ -97,7 +124,7 @@ public class LSTMGenerator {
         for (int i = 0; i < 10000; i++) {
             model.fit(charIterator.next());
             if (i % 10 == 0) {
-                generateText(model, 100);
+                generateText(model, 100, "");
             }
         }
     }
@@ -105,13 +132,26 @@ public class LSTMGenerator {
 
     private MultiLayerNetwork createModel() {
         int numberOfCharClasses = charIterator.getCharToIdx().size();
-
-        //TODO define net
-        MultiLayerConfiguration conf = null;
+        MultiLayerConfiguration conf = new NeuralNetConfiguration.Builder()
+                .seed(12345)
+                .updater(new Adam(0.005))
+                .l2(0.0001)
+                .weightInit(WeightInit.XAVIER)
+                .list()
+                .layer(new LSTM.Builder().nIn(numberOfCharClasses).nOut(512)
+                        .activation(Activation.TANH).build())
+                .layer(new LSTM.Builder().nIn(512).nOut(512)
+                        .activation(Activation.TANH).build())
+                .layer(new RnnOutputLayer.Builder().activation(Activation.SOFTMAX)
+                        .lossFunction(LossFunctions.LossFunction.MCXENT).nIn(512).nOut(numberOfCharClasses).build())
+                .backpropType(BackpropType.TruncatedBPTT)
+                .tBPTTLength(50)
+                .build();
 
         MultiLayerNetwork model = new MultiLayerNetwork(conf);
         model.init();
         return model;
     }
+
 
 }

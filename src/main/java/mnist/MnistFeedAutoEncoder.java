@@ -56,6 +56,10 @@ public class MnistFeedAutoEncoder {
         MultiLayerNetwork model = createNet();
         model.init();
 
+        //createUiServer(model);
+        //print the score with every 1 iteration
+        //model.setListeners(new ScoreIterationListener(1));
+
         DataSetIterator mnistTrain = new MnistDataSetIterator(128, true, 12345);
         trainNet(model, mnistTrain);
         //model = ModelSerializer.restoreMultiLayerNetwork(new File(MODEL));
@@ -67,6 +71,7 @@ public class MnistFeedAutoEncoder {
     private void evaluateModel(MultiLayerNetwork model, DataSetIterator mnistTest) {
         log.info("Evaluate model....");
         System.setProperty("java.specification.version", "1.8");
+
 
         for (int i = 0; i < 10; i++) {
             INDArray input = Nd4j.zeros(new int[]{1, 10});
@@ -93,15 +98,57 @@ public class MnistFeedAutoEncoder {
 
     private void trainNet(MultiLayerNetwork model, DataSetIterator mnistTrain) throws Exception {
         log.info("Train model....");
-        //TODO train with default mnist iterator, but output should be = input
-        // model.save(new File(MODEL));
+        for (int i = 0; i < 10000; i++) {
+            if (!mnistTrain.hasNext())
+                mnistTrain.reset();
+            DataSet ds = mnistTrain.next();
+            DataSet identityDs = new DataSet(ds.getFeatures(), ds.getFeatures());
+            model.fit(identityDs);
+        }
+        model.save(new File(MODEL));
     }
 
 
     private MultiLayerNetwork createNet() {
+        //number of rows and columns in the input pictures
+        final int numRows = 28;
+        final int numColumns = 28;
+        int outputNum = 10; // number of output classes
+
+
         log.info("Build model....");
-        MultiLayerConfiguration conf = null;
-        //TODO define enets
+        MultiLayerConfiguration conf = new NeuralNetConfiguration.Builder()
+                .seed(12345) //include a random seed for reproducibility
+                // use stochastic gradient descent as an optimization algorithm
+                .updater(new Adam())
+                .l2(1e-4)
+                .list()
+                .layer(new DenseLayer.Builder() //create the first, input layer with xavier initialization
+                        .nIn(numRows * numColumns)
+                        .nOut(256)
+                        .activation(Activation.RELU)
+                        .weightInit(WeightInit.XAVIER)
+                        .build())
+                .layer(new DenseLayer.Builder()
+                        .nIn(256)
+                        .nOut(10)
+                        .activation(Activation.RELU)
+                        .weightInit(WeightInit.XAVIER)
+                        .build())
+                .layer(new DenseLayer.Builder()
+                        .nIn(10)
+                        .nOut(256)
+                        .activation(Activation.RELU)
+                        .weightInit(WeightInit.XAVIER)
+                        .build())
+                .layer(new OutputLayer.Builder(LossFunction.MSE)
+                        .nIn(256)
+                        .nOut(numRows * numColumns)
+                        .activation(Activation.RELU)
+                        .weightInit(WeightInit.XAVIER)
+                        .build())
+                .build();
+
         return new MultiLayerNetwork(conf);
     }
 

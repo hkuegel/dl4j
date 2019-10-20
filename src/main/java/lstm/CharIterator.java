@@ -69,11 +69,22 @@ public class CharIterator implements DataSetIterator {
         // [miniBatchSize,inputSize,timeSeriesLength]
         INDArray features = Nd4j.zeros(batchSize, charToIdx.size(), seqLen);
         INDArray labels = Nd4j.zeros(batchSize, charToIdx.size(), seqLen);
-        //TODO implement
         // masks : many-to-many, but ignore first half of output (warm up)
         // all input columns, but only final output is relevant
         INDArray featureMask = Nd4j.zeros(new int[]{batchSize, seqLen});
         INDArray labelMask = Nd4j.zeros(new int[]{batchSize, seqLen});
+        for (int i = 0; i < batchSize; i++) {
+            for (int j = 0; j < seqLen; j++) {
+                features.putScalar(new int[]{i, charToIdx.get(text[pos + i + j]), j}, 1f);
+                labels.putScalar(new int[]{i, charToIdx.get(text[pos + i + j + 1]), j}, 1f);
+                if (j > seqLen / 2) {  // ignore start for warm up
+                    labelMask.putScalar(new int[]{i, j}, 1f);
+                }
+                featureMask.putScalar(new int[]{i, j}, 1f);
+            }
+
+        }
+
 
         pos += batchSize;
         return new DataSet(features, labels, featureMask, labelMask);

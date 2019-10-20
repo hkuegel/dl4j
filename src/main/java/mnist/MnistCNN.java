@@ -58,8 +58,8 @@ public class MnistCNN {
         model.init();
 
         createUiServer(model);
-        //print the score with every 10 iteration
-        //model.setListeners(new ScoreIterationListener(10));
+        //print the score with every 1 iteration
+        //model.setListeners(new ScoreIterationListener(1));
 
         DataSetIterator mnistTrain = new MnistDataSetIterator(128, true, 12345);
         trainNet(model, mnistTrain);
@@ -97,8 +97,41 @@ public class MnistCNN {
         learningRateSchedule.put(1000, 0.001);
 
         log.info("Build model....");
-        //TODO build model
-        MultiLayerConfiguration conf = null;
+        MultiLayerConfiguration conf = new NeuralNetConfiguration.Builder()
+                .seed(12345)
+                .l2(0.0005) // ridge regression value
+                .updater(new Nesterovs(new MapSchedule(ScheduleType.ITERATION, learningRateSchedule)))
+                .weightInit(WeightInit.XAVIER)
+                .list()
+                .layer(new ConvolutionLayer.Builder(5, 5)
+                        .nIn(1)
+                        .stride(1, 1)
+                        .nOut(20)    // nr of filters
+                        .activation(Activation.IDENTITY)
+                        .build())
+                .layer(new SubsamplingLayer.Builder(SubsamplingLayer.PoolingType.MAX)
+                        .kernelSize(2, 2)
+                        .stride(2, 2)
+                        .build())
+                .layer(new ConvolutionLayer.Builder(5, 5)
+                        .stride(1, 1) // nIn need not specified in later layers
+                        .nOut(50)
+                        .activation(Activation.IDENTITY)
+                        .build())
+                .layer(new SubsamplingLayer.Builder(SubsamplingLayer.PoolingType.MAX)
+                        .kernelSize(2, 2)
+                        .stride(2, 2)
+                        .build())
+                .layer(new DenseLayer.Builder().activation(Activation.RELU)
+                        .nOut(500)
+                        .build())
+                .layer(new OutputLayer.Builder(LossFunctions.LossFunction.NEGATIVELOGLIKELIHOOD)
+                        .nOut(outputNum)
+                        .activation(Activation.SOFTMAX)
+                        .build())
+                .setInputType(InputType.convolutionalFlat(28, 28, 1)) // InputType.convolutional for normal image
+                .build();
+
         return new MultiLayerNetwork(conf);
     }
 
